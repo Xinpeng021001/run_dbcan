@@ -30,3 +30,5 @@ dependencies:
   - biopython
   - bbtools
   - seaborn
+  - pyhmmer
+  - requests
