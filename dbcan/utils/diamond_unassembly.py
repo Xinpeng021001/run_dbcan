@@ -1,3 +1,6 @@
+###
+#Revised by Jinfang, added single-end reads.
+###
 import os
 import sys
 
@@ -46,6 +49,20 @@ def CAZy_filter(cazy):
 ### need to convert to blastp 6
 class PafRecord(object):
     def __init__(self,lines):
+        ### basic information 
+        #self.Qsn = lines[0]
+        #self.Qsl = lines[1]
+        #self.Qs  = lines[2]
+        #self.Qe  = lines[3]
+        #self.Strand = lines[4]
+        #self.Tsn = lines[5]
+        #self.Tsl = lines[6]
+        #self.Ts  = lines[7]
+        #self.Te  = lines[8]
+        #self.Nrm = lines[9]
+        #self.Abl = lines[10]
+        #self.Mq  = lines[11] ### if the paf was converted from sam, Mq here stands for the MAPQ 
+        ### blastp 
         self.Qsn = lines[0]
         self.Qsl = lines[12]
         self.Qs  = int(lines[6]) -1
@@ -110,6 +127,7 @@ def CAZyReadCount(cazyid,cazy2seqid,readtable):
         tmp_sum += readtable[seqid]
     return tmp_sum
 
+### parameters tool is not used
 def FPKMToCsv(args,tool,cazyfpkm,readtable,cazy2seqid):
     outfilename = args.output 
     with open(outfilename,'w') as f:
@@ -147,11 +165,11 @@ def get_count_reads(file):
 
 def diamond_unassemble_data(args):
     check_read_type(args.raw_reads)
-    paf1 = Paf(args.paf1)
+    paf1 = Paf(args.paf1); paf2 = None
     if args.paf2:
         paf2 = Paf(args.paf2)
     totalreadnumber = get_count_reads(args.raw_reads)
-    if args.paf2:
+    if args.paf2: ### pair-end reads, the total read number need to X2
         totalreadnumber = float(totalreadnumber)*2
     ### FPKM or TPM is based on args.normalized
     cazyfpkm,readtable,cazy2seqid = Cal_FPKM(paf1,paf2,totalreadnumber,args.normalized)
@@ -167,13 +185,16 @@ def diamond_filter(args):
 
 def getSeqlen(paf1,paf2):
     x = paf1.GetSeqLen()
-    y = paf2.GetSeqLen()
+    y = {}
+    if paf2:
+        y = paf2.GetSeqLen()
     return merge_two_dicts(x,y)
 
 def getCazySeqId(paf1,paf2):
     cazy2seqid = {}
     paf1.CAZy2SeqID(cazy2seqid)
-    paf2.CAZy2SeqID(cazy2seqid)
+    if paf2:
+        paf2.CAZy2SeqID(cazy2seqid)
     for cazy in cazy2seqid:
         cazy2seqid[cazy] = set(cazy2seqid[cazy])
     return cazy2seqid
@@ -181,7 +202,8 @@ def getCazySeqId(paf1,paf2):
 def get_subfam2seqid(paf1,paf2):
     subfam2seqid = {}
     paf1.Get_subfam2SeqID(subfam2seqid)
-    paf2.Get_subfam2SeqID(subfam2seqid)
+    if paf2:
+        paf2.Get_subfam2SeqID(subfam2seqid)
     for subfam in subfam2seqid:
         subfam2seqid[subfam] = set(subfam2seqid[subfam])
     return subfam2seqid
@@ -189,11 +211,11 @@ def get_subfam2seqid(paf1,paf2):
 def getSeqReadID(paf1,paf2):
     seqid2readid = {}
     paf1.SeqID2ReadID(seqid2readid)
-    paf2.SeqID2ReadID(seqid2readid)
+    if paf2:
+        paf2.SeqID2ReadID(seqid2readid)
     return seqid2readid
 
 def SeqReadCount(seqid2readid):
-    ## 0.5 two reads should be one because of the input is pair end
     return{seqid:len(seqid2readid[seqid]) for seqid in seqid2readid}
 
 def merge_two_dicts(x, y):
@@ -293,9 +315,7 @@ def read_EC2substrate_table(args):
     for line in map_table_lines[1:]:
         lines = line.rstrip("\n").split("\t")
         substrates = [sub_tmp.strip(" ") for sub_tmp in lines[0].strip().replace("and","").split(',')]
-        #famEC2substrate.setdefault(lines[2],[]).extend(substrates)
         famEC2substrate.setdefault(lines[-1],[]).extend(substrates)
-        #famEC2substrate[lines[-1]] = lines[0]
     for fam in famEC2substrate:
         famEC2substrate[fam] = list(set(famEC2substrate[fam]))
     return famEC2substrate
@@ -425,11 +445,11 @@ def diamond_subfam_abund(args):
     check_read_type(args.raw_reads)
     ### FPKM or TPM is based on args.normalized
     CAZyID2subfam = read_CAZyID2subfam_table(args)
-    paf1 = Paf(args.paf1)
+    paf1 = Paf(args.paf1) ; paf2 = None
     if args.paf2:
         paf2 = Paf(args.paf2)
+        paf2.Assign_subfam(CAZyID2subfam)
     paf1.Assign_subfam(CAZyID2subfam)
-    paf2.Assign_subfam(CAZyID2subfam)
     totalreadnumber = get_count_reads(args.raw_reads)
     if args.paf2:
         totalreadnumber = float(totalreadnumber)*2
@@ -454,6 +474,7 @@ def main():
     if args.function == "diamond_fam_abund":
         ### dbcan_asmfree diamond_fam_abund -paf1 Dry2014_1.blastx -paf2 Dry2014_2.blastx --raw_reads Dry2014_1_val_1.fq.gz -n FPKM -o Dry2014_fam_abund
         ### dbcan_asmfree diamond_fam_abund -paf1 Wet2014_1.blastx -paf2 Wet2014_2.blastx --raw_reads Wet2014_1_val_1.fq.gz -n FPKM -o Wet2014_fam_abund
+        ### dbcan_asmfree diamond_fam_abund -paf1 Dry2014_1.blastx --raw_reads Dry2014_1_val_1.fq.gz -n FPKM -o Dry2014_fam_abund.SE
         diamond_unassemble_data(args)
     if args.function == "diamond_subfam_abund":
         ### dbcan_asmfree diamond_subfam_abund -paf1 Dry2014_1.blastx -paf2 Dry2014_2.blastx --raw_reads Dry2014_1_val_1.fq.gz -o Dry2014_subfam_abund -n FPKM
@@ -469,3 +490,4 @@ def main():
         CAZyme_substrate(args)
 if __name__== "__main__":
     main()
+
